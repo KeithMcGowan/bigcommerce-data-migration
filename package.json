@@ -1,0 +1,15 @@
+{
+  "name": "bigcommerce-data-migration",
+  "version": "1.0.0",
+  "description": "Scripts for transferring data between BigCommerce stores and channels.",
+  "scripts": {
+    "migrate:widgets": "node widgets/migrate-widget-templates.js",
+    "migrate:widgets:dry": "node widgets/migrate-widget-templates.js --dry-run"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

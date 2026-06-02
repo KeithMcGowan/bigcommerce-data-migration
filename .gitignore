@@ -1,0 +1,4 @@
+# Environment — contains store credentials; never commit this
+.env
+
+node_modules/
