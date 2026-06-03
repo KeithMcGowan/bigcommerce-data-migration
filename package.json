@@ -4,7 +4,9 @@
   "description": "Scripts for transferring data between BigCommerce stores and channels.",
   "scripts": {
     "migrate:widgets": "node widgets/migrate-widget-templates.js",
-    "migrate:widgets:dry": "node widgets/migrate-widget-templates.js --dry-run"
+    "migrate:widgets:dry": "node widgets/migrate-widget-templates.js --dry-run",
+    "migrate:pages": "node web-pages/migrate-web-pages.js",
+    "migrate:pages:dry": "node web-pages/migrate-web-pages.js --dry-run"
   },
   "dependencies": {
     "dotenv": "^16.4.5"

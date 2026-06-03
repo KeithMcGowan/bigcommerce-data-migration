@@ -4,8 +4,7 @@
  *   - If a template with the same name already exists on the destination channel → UPDATE it
  *   - If no match is found → CREATE it
  *
- * Includes a 1-call/sec rate limiter and automatic 60-second retry on
- * rate-limit (429) or server errors (5xx).
+ * Rate limiting and retry logic are handled by the shared lib/api.js client.
  *
  * Usage:
  *   npm run migrate:widgets          — live run
@@ -17,10 +16,14 @@
 
 require('dotenv').config();
 
-const STORE_HASH      = process.env.STORE_HASH;
-const AUTH_TOKEN      = process.env.AUTH_TOKEN;
+const { createApiClient } = require('../lib/api.js');
+
+const STORE_HASH        = process.env.STORE_HASH;
+const AUTH_TOKEN        = process.env.AUTH_TOKEN;
 const SOURCE_CHANNEL_ID = parseInt(process.env.SOURCE_CHANNEL_ID, 10);
 const DEST_CHANNEL_ID   = parseInt(process.env.DEST_CHANNEL_ID, 10);
+
+const { apiFetch, BASE_URL } = createApiClient({ storeHash: STORE_HASH, authToken: AUTH_TOKEN });
 
 // Run with --dry-run to preview what would be created/updated without writing anything.
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -37,59 +40,6 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const WIDGET_ALLOWLIST = [];
 
 // ---------------------------------------------------------------------------
-// Rate-limit / retry config
-// ---------------------------------------------------------------------------
-const MIN_CALL_INTERVAL_MS = 1_000;   // at most 1 API call per second
-const RETRY_DELAY_MS       = 60_000;  // wait 60 s before retrying a failed call
-const MAX_RETRIES          = 1;       // number of retry attempts per call
-
-// ---------------------------------------------------------------------------
-
-const BASE_URL = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
-
-const HEADERS = {
-  'X-Auth-Token': AUTH_TOKEN,
-  'Content-Type': 'application/json',
-  Accept:         'application/json',
-};
-
-// Tracks the timestamp of the last API call for rate limiting.
-let lastCallTime = 0;
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Central fetch wrapper that enforces:
- *   1. A minimum 1-second gap between API calls (rate limiting).
- *   2. Automatic retry after RETRY_DELAY_MS on HTTP 429 or any 5xx response.
- *
- * All API calls in this script go through apiFetch so the rate limiter applies
- * globally regardless of how many functions are making calls.
- *
- * @param {string} url
- * @param {RequestInit} options - Passed through to native fetch (method, body, etc.)
- * @param {number} attempt - Internal — tracks retry depth; do not pass manually.
- */
-async function apiFetch(url, options = {}, attempt = 0) {
-  // Throttle: pause if the last call was less than MIN_CALL_INTERVAL_MS ago.
-  const wait = MIN_CALL_INTERVAL_MS - (Date.now() - lastCallTime);
-  if (wait > 0) await sleep(wait);
-  lastCallTime = Date.now();
-
-  const res = await fetch(url, { ...options, headers: HEADERS });
-
-  if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
-    console.warn(
-      `  → HTTP ${res.status}. Waiting ${RETRY_DELAY_MS / 1_000}s before retry...`
-    );
-    await sleep(RETRY_DELAY_MS);
-    return apiFetch(url, options, attempt + 1);
-  }
-
-  return res;
-}
 
 /**
  * Fetches every custom widget template on the source channel, paginated.
@@ -209,10 +159,10 @@ async function updateWidgetTemplate(uuid, template) {
 
 async function run() {
   const missingOrInvalid = [
-    !STORE_HASH                                  && 'STORE_HASH',
-    !AUTH_TOKEN                                  && 'AUTH_TOKEN',
-    (!SOURCE_CHANNEL_ID || SOURCE_CHANNEL_ID < 1) && 'SOURCE_CHANNEL_ID',
-    (!DEST_CHANNEL_ID   || DEST_CHANNEL_ID   < 1) && 'DEST_CHANNEL_ID',
+    !STORE_HASH                                    && 'STORE_HASH',
+    !AUTH_TOKEN                                    && 'AUTH_TOKEN',
+    (!SOURCE_CHANNEL_ID || SOURCE_CHANNEL_ID < 1)  && 'SOURCE_CHANNEL_ID',
+    (!DEST_CHANNEL_ID   || DEST_CHANNEL_ID   < 1)  && 'DEST_CHANNEL_ID',
   ].filter(Boolean);
 
   if (missingOrInvalid.length > 0) {
